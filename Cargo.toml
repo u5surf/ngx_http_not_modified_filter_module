@@ -1,0 +1,20 @@
+[package]
+name = "ngx_http_not_modified_filter_module"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+# The library links against nginx, whose symbols only exist inside the nginx
+# binary. A test harness built from it cannot start, so the pure logic is
+# tested through tests/etag_list.rs instead.
+test = false
+
+[features]
+# Emit the `ngx_modules` table needed when the crate is loaded as a dynamic
+# module. Leave it off for a static build into nginx.
+export-modules = []
+
+[dependencies]
+ngx = { version = "=0.5.0", features = ["vendored"] }

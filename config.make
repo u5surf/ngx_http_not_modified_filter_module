@@ -1,0 +1,4 @@
+ngx_addon_name="ngx_http_not_modified_filter_module_rs"
+ngx_cargo_manifest=$ngx_addon_dir/Cargo.toml
+
+ngx_rust_make_modules
