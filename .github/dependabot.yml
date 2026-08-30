@@ -1,0 +1,34 @@
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+
+  # Actions are pinned to commit SHAs in the workflow, which means a moved tag
+  # cannot change what runs, but it also means nothing updates on its own.
+  # Dependabot rewrites the SHA and the trailing version comment together.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+
+  # The ngx dependency is pinned to an exact version because the module has to
+  # match the ngx-rust release the port was written against. A major or minor
+  # bump wants reading before taking, so only the lockfile is updated here and
+  # version bumps are left to be done by hand.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-type: "all"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+    versioning-strategy: "lockfile-only"
