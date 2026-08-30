@@ -89,7 +89,23 @@ That is also why `[lib] test = false` is set in `Cargo.toml`.
 
 ## Verified behaviour
 
-Loaded as a dynamic module into nginx 1.30.4 on macOS, ahead of the built-in filter, serving a static file with `etag on`:
+`tests/functional.sh` drives a real nginx with the module loaded and checks the status codes. CI runs it on every push; to run it yourself:
+
+```sh
+./tests/functional.sh /path/to/nginx/objs/nginx \
+    target/debug/libngx_http_not_modified_filter_module.so
+```
+
+```
+ok       plain GET                                  200
+ok       If-None-Match: <etag>                      304
+...
+ok       module decided 17 responses ahead of the built-in filter
+
+14 checks passed
+```
+
+Loaded as a dynamic module into nginx 1.30.4, ahead of the built-in filter, serving a static file with `etag on`:
 
 | request | expected | actual |
 | --- | --- | --- |
@@ -106,7 +122,7 @@ Loaded as a dynamic module into nginx 1.30.4 on macOS, ahead of the built-in fil
 | `If-Unmodified-Since: <old date>` | 412 | 412 |
 | `If-Unmodified-Since: <future date>` | 200 | 200 |
 
-The debug log confirms this module made the decisions rather than the built-in one — it was entered 14 times with `status:200`, and its own comparisons appear for every case:
+The status codes alone would not prove anything, since the built-in filter produces the same ones. The script therefore also greps the debug log for entries this module made while the response was still a 200, and fails if there are none:
 
 ```
 rust not_modified: entry status:200 main:true disabled:0
@@ -156,4 +172,6 @@ Three, all deliberate:
 | `src/lib.rs` | module definition, filter installation, the filter and its three helpers |
 | `src/etag.rs` | entity-tag list matching — no nginx types |
 | `tests/etag_list.rs` | tests for the above |
+| `tests/functional.sh` | conditional request checks against a running nginx |
 | `config`, `config.make`, `auto/rust` | static build support for `--add-module` |
+| `.github/workflows/ci.yml` | fmt, clippy, unit tests, and the functional checks |

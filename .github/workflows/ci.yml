@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: '1'
+  NGINX_REF: stable-1.30
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Format, lints and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install nginx build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcre2-dev zlib1g-dev
+
+      # Formatting needs nothing built.
+      - run: cargo fmt --check
+
+      # Both of these compile the library, which links against nginx. The ngx
+      # dependency has its "vendored" feature on, so cargo builds a copy of
+      # nginx first; the apt packages above are what that build needs.
+      - run: cargo clippy --all-targets -- -D warnings
+
+      - run: cargo test
+
+  functional:
+    name: Conditional requests against a real nginx
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: nginx/nginx
+          ref: ${{ env.NGINX_REF }}
+          path: nginx
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-functional-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-functional-
+
+      - name: Install nginx build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcre2-dev zlib1g-dev
+
+      # --with-compat is required to load dynamic modules at all, and
+      # --with-debug is what makes the module's own log lines visible, which is
+      # how the script tells this module apart from nginx's built-in one.
+      - name: Build nginx
+        working-directory: nginx
+        run: |
+          auto/configure --with-compat --with-debug --without-http_rewrite_module
+          make -j"$(nproc)"
+
+      # Building against this nginx rather than a vendored one, so that the
+      # module's signature matches and nginx will load it.
+      - name: Build the module
+        env:
+          NGINX_BUILD_DIR: ${{ github.workspace }}/nginx/objs
+        run: cargo build --no-default-features --features export-modules
+
+      - name: Run the conditional request checks
+        run: |
+          ./tests/functional.sh \
+            nginx/objs/nginx \
+            target/debug/libngx_http_not_modified_filter_module.so
+
+      - name: Upload nginx error log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-error-log
+          path: /tmp/tmp.*/logs/error.log
+          if-no-files-found: ignore
